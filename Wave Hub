@@ -1,0 +1,480 @@
+--[[local syn = false
+local protectgui = false
+local function getgenv() end
+local Drawing = Vector3.new()
+local function getnamecallmethod() end
+local function hookmetamethod() end
+local function newcclosure() end
+local function checkcaller() end]]
+
+-- init
+if not game:IsLoaded() then 
+	game.Loaded:Wait()
+end
+
+if not syn or not protectgui then
+	getgenv().protectgui = function() end
+end
+
+
+-- variables
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+local GetChildren = game.GetChildren
+local GetPlayers = Players.GetPlayers
+local WorldToScreen = Camera.WorldToScreenPoint
+local WorldToViewportPoint = Camera.WorldToViewportPoint
+local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
+local FindFirstChild = game.FindFirstChild
+local RenderStepped = RunService.RenderStepped
+local GuiInset = GuiService.GetGuiInset
+local GetMouseLocation = UserInputService.GetMouseLocation
+
+local resume = coroutine.resume 
+local create = coroutine.create
+
+local ValidTargetParts = {"Head", "HumanoidRootPart"}
+local PredictionAmount = 0.165
+
+local fov_circle = Drawing.new("Circle")
+fov_circle.Thickness = 1
+fov_circle.NumSides = 100
+fov_circle.Radius = 200
+fov_circle.Filled = false
+fov_circle.Visible = false
+fov_circle.ZIndex = 999
+fov_circle.Transparency = 1
+fov_circle.Color = Color3.fromRGB(54, 57, 241)
+
+local Options = {
+	["TargetPart"] = "Head";
+	["Radius"] = 200;
+	["HitChance"] = 100;
+	["Method"] = "Raycast";
+}
+local Toggles = {
+	["Aim_Enabled"] = false;
+	["Fov"] = false;
+	["Esp_Players"] = false;
+	["Esp_Body"] = false;
+	["Esp_Npc"] = false;
+}
+
+local ExpectedArguments = {
+	FindPartOnRayWithIgnoreList = {
+		ArgCountRequired = 3,
+		Args = {
+			"Instance", "Ray", "table", "boolean", "boolean"
+		}
+	},
+	FindPartOnRayWithWhitelist = {
+		ArgCountRequired = 3,
+		Args = {
+			"Instance", "Ray", "table", "boolean"
+		}
+	},
+	FindPartOnRay = {
+		ArgCountRequired = 2,
+		Args = {
+			"Instance", "Ray", "Instance", "boolean", "boolean"
+		}
+	},
+	Raycast = {
+		ArgCountRequired = 3,
+		Args = {
+			"Instance", "Vector3", "Vector3", "RaycastParams"
+		}
+	}
+}
+
+local function CalculateChance(Percentage)
+	-- // Floor the percentage
+	Percentage = math.floor(Percentage)
+	-- // Get the chance
+	local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
+	-- // Return
+	return chance <= Percentage / 100
+end
+
+local function getPositionOnScreen(Vector)
+	local Vec3, OnScreen = WorldToScreen(Camera, Vector)
+	return Vector2.new(Vec3.X, Vec3.Y), OnScreen
+end
+
+local function ValidateArguments(Args, RayMethod)
+	local Matches = 0
+	if #Args < RayMethod.ArgCountRequired then
+		return false
+	end
+	for Pos, Argument in next, Args do
+		if typeof(Argument) == RayMethod.Args[Pos] then
+			Matches = Matches + 1
+		end
+	end
+	return Matches >= RayMethod.ArgCountRequired
+end
+
+local function Esp()
+	do
+		for _,v in Players:GetPlayers() do
+			if v.Name ~= LocalPlayer.Name and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChild("Humanoid") then
+				local char = v.Character
+				local humroot:Part = char:FindFirstChild("HumanoidRootPart")
+				local hum = char:FindFirstChildOfClass("Humanoid") 
+
+				local esp:BillboardGui = humroot:FindFirstChild("Esp")
+				local hl:Highlight = char:FindFirstChild("Target_HL")
+
+				if esp then
+					local textlable = esp:FindFirstChildOfClass("TextLabel")
+					textlable.Text = `{char.Name} ({ math.floor(( LocalPlayer:DistanceFromCharacter(humroot.Position) or 0 )/3.571) }) ({ math.floor(hum.Health) })`
+					esp.Enabled = Toggles.Esp_Players
+					
+					if v:GetAttribute("Esp_Target") then
+						textlable.TextColor3 = Color3.fromRGB(255, 0, 0)
+					else
+						textlable.TextColor3 = Color3.fromRGB(255, 170, 0)
+					end
+					
+				else
+					local BillboardGui = Instance.new("BillboardGui")
+					local TextLabel = Instance.new("TextLabel")
+					BillboardGui.Parent = v.Character.HumanoidRootPart
+					BillboardGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+					BillboardGui.Active = true
+					BillboardGui.Name = `Esp`
+					BillboardGui.AlwaysOnTop = true
+					BillboardGui.LightInfluence = 1.000
+					BillboardGui.Size = UDim2.new(0, 150, 0, 10)
+					BillboardGui.StudsOffset = Vector3.new(0, 2.5, 0)
+					TextLabel.Parent = BillboardGui
+					TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+					TextLabel.BackgroundTransparency = 1.000
+					TextLabel.Size = UDim2.new(1,0,1,0)
+					TextLabel.Font = Enum.Font.GothamBold
+					TextLabel.Text = v.Name
+					TextLabel.TextColor3 = Color3.fromRGB(229, 188, 24)
+					TextLabel.TextScaled = true
+					TextLabel.TextStrokeTransparency = 0.000
+					TextLabel.TextWrapped = true
+				end
+				
+				if hl then
+					if v:GetAttribute("Esp_Target") then
+						hl.FillColor = Color3.fromRGB(26, 148, 255)
+						hl.FillTransparency = 0
+					else
+						hl.FillColor = Color3.fromRGB(200, 0, 0)
+						hl.FillTransparency = 0.5
+					end
+				else
+					local hightlight = Instance.new("Highlight",char)
+					hightlight.Name = "Target_HL"
+					hightlight.DepthMode = Enum.HighlightDepthMode.Occluded
+					hightlight.FillColor = Color3.fromRGB(229, 188, 24)
+					hightlight.FillTransparency = .5
+					hightlight.OutlineTransparency = 1
+				end
+			end
+		end
+	end
+	do
+		for _,v:Model in workspace.DroppedItems:GetChildren() do
+			local s,userid = pcall(function()
+				return Players:GetUserIdFromNameAsync(v.Name)
+			end)
+			if s and userid and v:FindFirstChildOfClass("Humanoid") then
+				local hl:Highlight = v:FindFirstChild("Target_HL")
+				if not hl then
+					local hightlight = Instance.new("Highlight",v)
+					hightlight.Name = "Target_HL"
+					hightlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+					hightlight.FillColor = Color3.fromRGB(85,255,127)
+					hightlight.FillTransparency = .2
+					hightlight.OutlineColor = Color3.fromRGB(255,85,255)
+					hightlight.OutlineTransparency = 0
+				else
+					hl.Enabled = Toggles.Esp_Body
+				end
+			end
+		end
+	end
+	do
+		for _,folder in workspace.AiZones:GetChildren() do
+			for _,v:Model in folder:GetChildren() do
+				local humroot:Part = v:FindFirstChild('HumanoidRootPart')
+				local hum = v:FindFirstChildOfClass("Humanoid")
+				if humroot and hum then
+					local esp:BillboardGui = humroot:FindFirstChild("Esp")
+					local hl:Highlight = v:FindFirstChild("Target_HL")
+
+					if esp then
+						local textlable = esp:FindFirstChildOfClass("TextLabel")
+						textlable.Text = `{v.Name} ({ math.floor(( LocalPlayer:DistanceFromCharacter(humroot.Position) or 0 )/3.571) }) ({ math.floor(hum.Health) })`
+						esp.Enabled = Toggles.Esp_Npc
+					else
+						local BillboardGui = Instance.new("BillboardGui")
+						local TextLabel = Instance.new("TextLabel")
+						BillboardGui.Parent = humroot
+						BillboardGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+						BillboardGui.Active = true
+						BillboardGui.Name = `Esp`
+						BillboardGui.AlwaysOnTop = true
+						BillboardGui.LightInfluence = 1.000
+						BillboardGui.Size = UDim2.new(0, 150, 0, 10)
+						BillboardGui.StudsOffset = Vector3.new(0, 2.5, 0)
+						TextLabel.Parent = BillboardGui
+						TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+						TextLabel.BackgroundTransparency = 1.000
+						TextLabel.Size = UDim2.new(1,0,1,0)
+						TextLabel.Font = Enum.Font.GothamBold
+						TextLabel.Text = v.Name
+						TextLabel.TextColor3 = Color3.fromRGB(183, 0, 255)
+						TextLabel.TextScaled = true
+						TextLabel.TextStrokeTransparency = 0.000
+						TextLabel.TextWrapped = true
+					end
+
+					if hl then
+						hl.Enabled = Toggles.Esp_Npc
+					else
+						local hightlight = Instance.new("Highlight",v)
+						hightlight.Name = "Target_HL"
+						hightlight.DepthMode = Enum.HighlightDepthMode.Occluded
+						hightlight.FillColor = Color3.fromRGB(183, 0, 255)
+						hightlight.FillTransparency = .5
+						hightlight.OutlineTransparency = 1
+					end
+				end
+			end
+		end
+	end
+end
+
+
+local function getDirection(Origin, Position)
+	return (Position - Origin).Unit * 1000
+end
+
+local function getMousePosition()
+	return GetMouseLocation(UserInputService)
+end
+
+local function getClosestPlayer()
+	if not Options.TargetPart then return end
+	local Closest
+	local Char
+	local DistanceToMouse
+	for _, Player in next, GetPlayers(Players) do
+		if Player == LocalPlayer then continue end
+
+		local Character = Player.Character
+		if not Character then continue end
+		
+		local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
+		local Humanoid = FindFirstChild(Character, "Humanoid")
+		if not HumanoidRootPart or not Humanoid or Humanoid and Humanoid.Health <= 0 then continue end
+
+		local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
+		if not OnScreen then continue end
+
+		local Distance = (getMousePosition() - ScreenPosition).Magnitude
+		if Distance <= (DistanceToMouse or Options.Radius or 2000) then
+			Closest = ((Options.TargetPart == "Random" and Character[ValidTargetParts[math.random(1, #ValidTargetParts)]]) or Character[Options.TargetPart])
+			DistanceToMouse = Distance
+			Char = Character
+		end
+	end
+	return Closest,Char
+end
+
+-- [[ Ui ]] --
+
+do
+	local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/MIKURUXHUB/Ui-Library/main/Xsx%20Lib%20New"))()
+	local Notif = library:InitNotifications()
+	library.title = "Wave X Hub"
+	library:Introduction()
+	local Init = library:Init()
+
+	--- [[ Main Tab ]] ---
+	do
+		local MainTab = Init:NewTab("Main")
+		MainTab:NewSection("Main")
+		MainTab:NewLabel("Aimbot", "center")
+
+		local AimbotToggle = MainTab:NewToggle("Aimbot", false, function(value)
+			Toggles.Aim_Enabled = value
+		end)
+
+		MainTab:NewSlider("Hit Chance", "", true, "/", {min = 0, max = 100, default = 100}, function(value)
+			Options.HitChance = value
+		end)
+
+		local MethodSelector = MainTab:NewSelector("Method", "Raycast", {"Raycast","FindPartOnRay","FindPartOnRayWithWhitelist","FindPartOnRayWithIgnoreList","Mouse.Hit/Target"}, function(value)
+			Options.Method = value
+		end)
+
+		local TargetHitSelector = MainTab:NewSelector("TargetHit", "Head", {"Head","HumanoidRootPart","Random"}, function(value)
+			Options.TargetPart = value
+		end)
+
+		AimbotToggle:AddKeybind(Enum.KeyCode.P)
+
+		MainTab:NewLabel("Fov", "center")
+		MainTab:NewToggle("Show Fov", false, function(value)
+			Toggles.Fov = value
+		end)
+		MainTab:NewSlider("Fov Size", "", true, "/", {min = 200, max = 1000, default = 200}, function(value)
+			Options.Radius = value
+		end)
+	end
+	--- [[ Esp Tab ]] ---
+	do
+		local EpsTab = Init:NewTab("Esp")
+		EpsTab:NewSection("Esp")
+		EpsTab:NewToggle("Players", false, function(value)
+			Toggles.Esp_Players = value
+		end):AddKeybind(Enum.KeyCode.KeypadOne)
+		
+		EpsTab:NewToggle("Npc", false, function(value)
+			Toggles.Esp_Npc = value
+		end):AddKeybind(Enum.KeyCode.KeypadTwo)
+		
+		EpsTab:NewToggle("Corpse", false, function(value)
+			Toggles.Esp_Body = value
+		end):AddKeybind(Enum.KeyCode.KeypadThree)
+	end
+	
+	--- [[ Settings Tab ]] ---
+	do
+		local SettingTab = Init:NewTab("Settings")
+		SettingTab:NewSection("Settings")
+		SettingTab:NewKeybind("Hide Ui", Enum.KeyCode.LeftAlt, function(key)
+			Init:UpdateKeybind(Enum.KeyCode[key])
+		end)
+	end
+
+end
+
+-- [[ Main ]] --
+local connect = RenderStepped:Connect(function()
+	if Toggles.Aim_Enabled then
+		local root,char = getClosestPlayer()
+		for _,v in Players:GetPlayers() do
+			if char then
+				if v.Name == char.Name then
+					v:SetAttribute("Esp_Target",true)
+				else
+					v:SetAttribute("Esp_Target",nil)
+				end
+			else
+				v:SetAttribute("Esp_Target",nil)
+			end
+		end
+	end
+
+	if Toggles.Fov then 
+		fov_circle.Visible = true
+		fov_circle.Position = getMousePosition()
+		fov_circle.Radius = Options.Radius
+	else
+		fov_circle.Visible = false
+	end
+	
+	if Toggles.Esp_Players or Toggles.Esp_Npc or Toggles.Esp_Body then
+		Esp()
+	end
+end)
+
+-- hooks
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+	local Method = getnamecallmethod()
+	local Arguments = {...}
+	local self = Arguments[1]
+	local chance = CalculateChance(Options.HitChance)
+	if Toggles.Aim_Enabled and self == workspace and not checkcaller() and chance == true then
+		if Method == "FindPartOnRayWithIgnoreList" and Options.Method == Method then
+			if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
+				local A_Ray = Arguments[2]
+
+				local HitPart = getClosestPlayer()
+				if HitPart then
+					local Origin = A_Ray.Origin
+					local Direction = getDirection(Origin, HitPart.Position)
+					Arguments[2] = Ray.new(Origin, Direction)
+
+					return oldNamecall(unpack(Arguments))
+				end
+			end
+		elseif Method == "FindPartOnRayWithWhitelist" and Options.Method == Method then
+			if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
+				local A_Ray = Arguments[2]
+
+				local HitPart = getClosestPlayer()
+				if HitPart then
+					local Origin = A_Ray.Origin
+					local Direction = getDirection(Origin, HitPart.Position)
+					Arguments[2] = Ray.new(Origin, Direction)
+
+					return oldNamecall(unpack(Arguments))
+				end
+			end
+		elseif (Method == "FindPartOnRay" or Method == "findPartOnRay") and Options.Method:lower() == Method:lower() then
+			if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
+				local A_Ray = Arguments[2]
+
+				local HitPart = getClosestPlayer()
+				if HitPart then
+					local Origin = A_Ray.Origin
+					local Direction = getDirection(Origin, HitPart.Position)
+					Arguments[2] = Ray.new(Origin, Direction)
+
+					return oldNamecall(unpack(Arguments))
+				end
+			end
+		elseif Method == "Raycast" and Options.Method == Method then
+			if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
+				local A_Origin = Arguments[2]
+
+				local HitPart = getClosestPlayer()
+				if HitPart then
+					Arguments[3] = getDirection(A_Origin, HitPart.Position)
+
+					return oldNamecall(unpack(Arguments))
+				end
+			end
+		end
+	end
+	return oldNamecall(...)
+end))
+
+local oldIndex = nil 
+oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, Index)
+	if self == Mouse and not checkcaller() and Toggles.Aim_Enabled and Options.Method == "Mouse.Hit/Target" and getClosestPlayer() then
+		local HitPart = getClosestPlayer()
+
+		if Index == "Target" or Index == "target" then 
+			return HitPart
+		elseif Index == "Hit" or Index == "hit" then 
+			return HitPart.CFrame
+		elseif Index == "X" or Index == "x" then 
+			return self.X 
+		elseif Index == "Y" or Index == "y" then 
+			return self.Y 
+		elseif Index == "UnitRay" then 
+			return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
+		end
+	end
+
+	return oldIndex(self, Index)
+end))
