@@ -7,6 +7,30 @@ local function hookmetamethod() end
 local function newcclosure() end
 local function checkcaller() end]]
 
+function Zoom()
+	local oldZoom = game.Workspace.CurrentCamera.FieldOfView
+	local function createZoom(time, amount)
+		local Tween_Info = TweenInfo.new(time, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut) 
+		local Tween = game:GetService("TweenService"):Create(game.Workspace.CurrentCamera, Tween_Info, {FieldOfView = amount})
+		return Tween
+	end
+	game:GetService("UserInputService").InputBegan:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.C then
+			createZoom(.2, 10):Play()
+		elseif input.KeyCode == Enum.KeyCode.X then
+			createZoom(.2, 0):Play()
+		end
+	end)
+
+	game:GetService("UserInputService").InputEnded:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.C then
+			createZoom(.2, oldZoom):Play()
+		elseif input.KeyCode == Enum.KeyCode.X then
+			createZoom(.2, oldZoom):Play()
+		end
+	end)
+end
+Zoom()
 -- init
 if not game:IsLoaded() then 
 	game.Loaded:Wait()
