@@ -3572,6 +3572,9 @@ function library:Init(key)
 		key = new
 		return TabLibrary
 	end
+	function TabLibrary:Show()
+		screen.Enabled = not screen.Enabled
+	end
 	return TabLibrary
 end
 return library
